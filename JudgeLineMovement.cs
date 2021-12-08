@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class JudgeTime
 {
+    public float pTime;
     public float gTime;
     public float bTime;
     public float judgeTime;
@@ -18,15 +19,15 @@ public class JudgeLineMovement : MonoBehaviour
     public GameObject Flick;
     public GameObject Drag;
     public GameObject Hold;
-    public List<GameObject> notes = new List<GameObject>();
+    public List<NoteMovement> notes = new List<NoteMovement>();
     public float pgrTime = 0;
     public float timeFactor = 0;
     private const bool DEBUG = false;
     public double virtualPosY = 0;
     private float virtualPosYVersion1 = 0;
     public JudgeTime judgeTime = new JudgeTime();
-
-    private float slope = 0;
+    public List<float> positionX = new List<float>();
+    private SpriteRenderer sr = new SpriteRenderer();
 
     #region temp vars
     private Vector3 moveTarget = new Vector3();
@@ -48,10 +49,6 @@ public class JudgeLineMovement : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        //transform.GetChild(0).gameObject.GetComponent<SpriteMask>().frontSortingOrder = id * 2;
-        //transform.GetChild(0).gameObject.GetComponent<SpriteMask>().backSortingOrder = id * 2 - 1;
-        //transform.GetChild(1).gameObject.GetComponent<SpriteMask>().frontSortingOrder = id * 2 + 1;
-        //transform.GetChild(1).gameObject.GetComponent<SpriteMask>().backSortingOrder = id * 2;
         timeFactor = 1.875f / line.bpm; //Proportional
         if (GlobalSetting.formatVersion == 1)
         {
@@ -85,6 +82,15 @@ public class JudgeLineMovement : MonoBehaviour
                 GlobalSetting.highLightedNotes.Add(i.time, 1);
             InitNote(i.type, i, -1);
         }
+        for (int i = 0; i < 11; i++)
+            positionX.Add(0f);
+        notes.Sort((l, r) =>
+        {
+            if (l.Note.time < r.Note.time)
+                return -1;
+            return 1;
+        });
+        sr = gameObject.GetComponent<SpriteRenderer>();
     }
 
     private void InitNote(int type, note i, int fact)
@@ -112,23 +118,23 @@ public class JudgeLineMovement : MonoBehaviour
         t.GetComponent<NoteMovement>().Note = i;
         t.GetComponent<NoteMovement>().notetype = type;
         t.GetComponent<NoteMovement>().isAbove = fact;
+        t.GetComponent<NoteMovement>().parentLineId = id;
         //t.tag = $"Note_Line{id}";
         t.transform.SetParent(transform);
         //t.SetActive(false);
-        notes.Add(t);
+        notes.Add(t.GetComponent<NoteMovement>());
     }
 
     // Update is called once per frame
     void Update()
     {
-
-        gameObject.GetComponent<SpriteRenderer>().color = GlobalSetting.lineColors[GlobalSetting.lineStat];
+        sr.color = GlobalSetting.lineColors[GlobalSetting.lineStat];
 
         if (!GlobalSetting.playing)
             return;
 
-        pgrTime += (Time.deltaTime / timeFactor);  //Time convert
-        //pgrTime = GlobalSetting.musicProgress / timeFactor;
+        //pgrTime += (Time.deltaTime / timeFactor);  //Time convert
+        pgrTime = GlobalSetting.musicProgress / timeFactor;
         
 
         UpdateMovement();
@@ -144,33 +150,39 @@ public class JudgeLineMovement : MonoBehaviour
             virtualPosY = (pgrTime - i.startTime) * i.value * timeFactor + i.floorPosition;
         }
         #endregion
+    }
 
+    internal NoteMovement GetNearestNote(Finger finger)
+    {
+        if (finger.phase == TouchPhase.Canceled)
+            return null;
+        float dx = positionX[finger.index];
+        List<NoteMovement> tempNoteList = new List<NoteMovement>();
+        foreach(NoteMovement i in notes)
+        {
+            if (i == null)
+                continue;
+            if (i.Note.time - judgeTime.judgeTime > pgrTime)
+                break;
+            if (JudgementManager.NoteInJudgeArea(dx, i.transform.localPosition.x, i.isAbove))
+            {
+                if (i.notetype == 2 || i.notetype == 4)
+                {
+                    i.judge(pgrTime * timeFactor, finger);
+                }
+                else
+                    tempNoteList.Add(i);
+            }
+        }
+        if (tempNoteList.Count == 0)
+            return null;
+        return tempNoteList[0];
     }
 
     void FixedUpdate()
     {
         if (Math.Abs(pgrTime - GlobalSetting.musicProgress / timeFactor) >= 10)
             pgrTime = GlobalSetting.musicProgress / timeFactor;
-        if (!GlobalSetting.autoPlay)
-        {
-            if (Application.platform == RuntimePlatform.WindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor)
-            {
-                if (Input.anyKey)
-                {
-                    foreach (GameObject i in notes)
-                    {
-                        if (i.GetComponent<NoteMovement>().Note.time - pgrTime > judgeTime.judgeTime)
-                            break;
-                        if (!i.GetComponent<NoteMovement>().destroyed)
-                        {
-                            i.GetComponent<NoteMovement>().judge(pgrTime);
-                            break;
-                        }
-
-                    }
-                }
-            }
-        }
     }
 
     void UpdateMovement()
@@ -187,13 +199,13 @@ public class JudgeLineMovement : MonoBehaviour
                     i.startTime = i.startTime < 0 ? 0 : i.startTime;
                     i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
                     Vector3 a = new Vector3();
-                    a.x = Screen.width * i.end;
-                    a.y = Screen.height * i.end2;
+                    a.x = GlobalSetting.screenWidth * i.end + GlobalSetting.widthOffset;
+                    a.y = GlobalSetting.screenHeight * i.end2;
                     a = Camera.main.ScreenToWorldPoint(a);
                     a.z = 0;
                     moveTarget = a;
-                    a.x = Screen.width * i.start;
-                    a.y = Screen.height * i.start2;
+                    a.x = GlobalSetting.screenWidth * i.start + GlobalSetting.widthOffset;
+                    a.y = GlobalSetting.screenHeight * i.start2;
                     a = Camera.main.ScreenToWorldPoint(a);
                     a.z = 0;
                     moveFrom = a;
@@ -203,13 +215,13 @@ public class JudgeLineMovement : MonoBehaviour
                     i.startTime = i.startTime < 0 ? 0 : i.startTime;
                     i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
                     Vector3 a = new Vector3();
-                    a.x = i.end / 1000 / 880 * Screen.width;
-                    a.y = i.end % 1000 / 520 * Screen.height;
+                    a.x = i.end / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
+                    a.y = i.end % 1000 / 520 * GlobalSetting.screenHeight;
                     a = Camera.main.ScreenToWorldPoint(a);
                     a.z = 0;
                     moveTarget = a;
-                    a.x = i.start / 1000 / 880 * Screen.width;
-                    a.y = i.start % 1000 / 520 * Screen.height;
+                    a.x = i.start / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
+                    a.y = i.start % 1000 / 520 * GlobalSetting.screenHeight;
                     a = Camera.main.ScreenToWorldPoint(a);
                     a.z = 0;
                     moveFrom = a;
@@ -296,42 +308,6 @@ public class JudgeLineMovement : MonoBehaviour
         Event @event = Event.current;
         if (!@event.isKey)
             return;
-        //GUI.Label(new Rect(Camera.main.WorldToScreenPoint(transform.position), new Vector2(100, 100)), $"<size=20><color=green>{id}</color></size>");
-        
-            /*if (Input.GetMouseButton(0))
-            {
-                Vector2 dir = new Vector2(- Mathf.Sin(transform.localEulerAngles.z * Mathf.Deg2Rad), Mathf.Cos( - transform.localEulerAngles.z * Mathf.Deg2Rad));
-                Debug.DrawRay(Camera.main.ScreenPointToRay(Input.mousePosition).origin,
-                   dir * 100,
-                   Color.red, 0.2f);
-                Debug.DrawRay(Camera.main.ScreenPointToRay(Input.mousePosition).origin,
-                   dir * -100,
-                   Color.red, 0.2f);
-                Ray rayup = new Ray(Camera.main.ScreenPointToRay(Input.mousePosition).origin, dir);
-                Ray raydown = new Ray(Camera.main.ScreenPointToRay(Input.mousePosition).origin, -dir);
-                if (Physics.Raycast(rayup, out RaycastHit hit, Mathf.Infinity))
-                {
-                    Debug.Log("aaa");
-                    foreach (GameObject i in notes)
-                    {
-                        if (i.GetComponent<NoteMovement>().Note.time - pgrTime > judgeTime.bTime)
-                            break;
-                        if (i.transform == hit.transform)
-                            i.GetComponent<NoteMovement>().judge(pgrTime);
-                    }
-                }
-                if (Physics.Raycast(raydown, out hit, Mathf.Infinity))
-                {
-                    Debug.Log("aaa");
-                    foreach (GameObject i in notes)
-                    {
-                        if (i.GetComponent<NoteMovement>().Note.time - pgrTime > judgeTime.bTime)
-                            break;
-                        if (i.transform == hit.transform)
-                            i.GetComponent<NoteMovement>().judge(pgrTime);
-                    }
-                }
-            }*/
     }
 
     void ResetScale()
@@ -344,10 +320,10 @@ public class JudgeLineMovement : MonoBehaviour
         yield return new WaitForSeconds(0.2f);
         transform.localScale = new Vector3(10, 2, 1);
         yield return new WaitForSeconds(1f);
-        foreach(GameObject i in notes)
+        foreach(NoteMovement i in notes)
         {
-            i.SetActive(true);
-            i.GetComponent<NoteMovement>().changeAlpha();
+            i.gameObject.SetActive(true);
+            i.changeAlpha();
         }
     }
 
