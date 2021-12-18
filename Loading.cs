@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class Loading : MonoBehaviour
 {
@@ -12,6 +13,8 @@ public class Loading : MonoBehaviour
     void Start()
     {
         StartCoroutine(AsyncLoading());
+        if (GlobalSetting.chartpath.Contains(".pec"))
+            GameObject.Find("Text").GetComponent<Text>().text = "Converting PEC to JSON\nBy lchzh3473...";
     }
 
     private IEnumerator AsyncLoading()

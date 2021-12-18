@@ -28,8 +28,8 @@ public class judgeLine
 [System.Serializable]
 public class judgeLineSpeedEvent
 {
-    public int startTime = 0;
-    public int endTime = 0;
+    public float startTime = 0;
+    public float endTime = 0;
     public double floorPosition = 0;
     public float value = 0;
 }
@@ -46,11 +46,17 @@ public class note
 [System.Serializable]
 public class judgeLineEvent
 {
-    public int startTime = 0;
-    public int endTime = 0;
+    public float startTime = 0;
+    public float endTime = 0;
     public float start = 0;
     public float end = 0;
     public float start2 = 0;
     public float end2 = 0;
 }
 
+[System.Serializable]
+public class pec2jsonRet
+{
+    public Chart data = new Chart();
+    public List<string> messages = new List<string>();
+}

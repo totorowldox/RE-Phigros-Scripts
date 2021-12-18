@@ -20,19 +20,18 @@ public class SelectUIControl : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
+        GlobalSetting.reset();
+        tempPath = PlayerPrefs.GetString("chartFolderPath", "");
+        pathSelector.text = tempPath;
+        //PlayerPrefs.SetString("chartFolderPath", tempPath);
+        GameObject.Find("DiffInput").GetComponent<InputField>().text = PlayerPrefs.GetString("difficultyName", "SP Lv.?");
+        chartNameUI.GetComponent<InputField>().text = PlayerPrefs.GetString("chartName", "Untitled");
     }
 
     public void OnClick()
     {
         GlobalSetting.chartName = chartNameUI.GetComponent<InputField>().text.Trim();
-#if UNITY_EDITOR
+#if UNITY_EDITOR || UNITY_STANDALONE_WIN
         GlobalSetting.chartpath = tempPath + "\\" + chartPathDropdown.captionText.text;
         GlobalSetting.musicPath = tempPath + "\\" + musicPathDropdown.captionText.text;
         GlobalSetting.illustrationPath = tempPath + "\\" + illustrationPathDropdown.captionText.text;
@@ -44,6 +43,10 @@ public class SelectUIControl : MonoBehaviour
         GlobalSetting.highLight = highlightToggle.isOn;
         GlobalSetting.difficulty = GameObject.Find("DiffInput").GetComponent<InputField>().text;
         GlobalSetting.userOffset = int.Parse(GameObject.Find("DelayInput").GetComponent<InputField>().text) / 1000f;
+        PlayerPrefs.SetString("chartFolderPath", tempPath);
+        PlayerPrefs.SetString("difficultyName", GlobalSetting.difficulty);
+        PlayerPrefs.SetString("chartName", GlobalSetting.chartName);
+        //PlayerPrefs.SetInt("userOffset", GlobalSetting.userOffset);
         SceneManager.LoadSceneAsync("LoadingScene");
     }
 
@@ -51,28 +54,27 @@ public class SelectUIControl : MonoBehaviour
     {
         tempPath = pathSelector.text;
         chartPathDropdown.options = getFileName(tempPath, "");
-        musicPathDropdown.options = getFileName(tempPath, ".wav");
-        illustrationPathDropdown.options = getFileName(tempPath, ".png");
+        musicPathDropdown.options = getFileName(tempPath, ".wav", ".ogg", ".mp3");
+        illustrationPathDropdown.options = getFileName(tempPath, ".png", ".bmp", ".jpg");
     }
 
-    public static List<Dropdown.OptionData> getFileName(string path, string type)
+    public static List<Dropdown.OptionData> getFileName(string path, params string[] typeE)
     {
-#if UNITY_EDITOR
         List<Dropdown.OptionData> list = new List<Dropdown.OptionData>();
         DirectoryInfo root = new DirectoryInfo(path);
-        foreach (FileInfo f in root.GetFiles())
-            if (f.FullName.EndsWith(type))
-                list.Add(new Dropdown.OptionData(f.Name));
-        return list;
+        foreach (string type in typeE)
+        {
+            foreach (FileInfo f in root.GetFiles())
+                if (f.FullName.Trim().EndsWith(type))
+                {
+#if UNITY_EDITOR || UNITY_STANDALONE_WIN
+                    list.Add(new Dropdown.OptionData(f.Name.Trim()));
 #else
-        List<Dropdown.OptionData> list = new List<Dropdown.OptionData>();
-        DirectoryInfo root = new DirectoryInfo(path);
-        foreach (FileInfo f in root.GetFiles())
-            if (f.FullName.EndsWith(type))
-                list.Add(new Dropdown.OptionData(f.FullName));
-        return list;
+                    list.Add(new Dropdown.OptionData(f.FullName.Trim()));
 #endif
-
+                }
+        }
+        return list;
     }
 
     public void SpeedChange()

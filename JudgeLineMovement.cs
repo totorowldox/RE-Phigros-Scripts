@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public class JudgeTime
@@ -24,7 +25,7 @@ public class JudgeLineMovement : MonoBehaviour
     public float timeFactor = 0;
     private const bool DEBUG = false;
     public double virtualPosY = 0;
-    private float virtualPosYVersion1 = 0;
+    private double virtualPosYVersion1 = 0;
     public JudgeTime judgeTime = new JudgeTime();
     public List<float> positionX = new List<float>();
     private SpriteRenderer sr = new SpriteRenderer();
@@ -57,12 +58,12 @@ public class JudgeLineMovement : MonoBehaviour
                 if (b.startTime < 0)
                     b.startTime = 0;
                 b.floorPosition = virtualPosYVersion1;
-                virtualPosYVersion1 += (b.endTime - b.startTime) * b.value * timeFactor;
+                virtualPosYVersion1 += (b.endTime - b.startTime) * b.value;
             }
         }
-        judgeTime.bTime = 0.16f / timeFactor;
-        judgeTime.gTime = 0.08f / timeFactor;
-        judgeTime.judgeTime = 0.2f / timeFactor;
+        judgeTime.bTime = 0.16f;
+        judgeTime.gTime = 0.08f;
+        judgeTime.judgeTime = 0.2f;
         transform.localScale = new Vector3(10, 2, 1);
         foreach (note i in line.notesAbove)
         {
@@ -133,8 +134,8 @@ public class JudgeLineMovement : MonoBehaviour
         if (!GlobalSetting.playing)
             return;
 
-        //pgrTime += (Time.deltaTime / timeFactor);  //Time convert
-        pgrTime = GlobalSetting.musicProgress / timeFactor;
+        //pgrTime = GlobalSetting.musicProgress;  //Time convert
+        pgrTime += Time.deltaTime;
         
 
         UpdateMovement();
@@ -147,7 +148,7 @@ public class JudgeLineMovement : MonoBehaviour
             judgeLineSpeedEvent i = b;
             if (pgrTime < i.startTime) break;
             if (pgrTime > i.endTime) continue;
-            virtualPosY = (pgrTime - i.startTime) * i.value * timeFactor + i.floorPosition;
+            virtualPosY = (pgrTime - i.startTime) * i.value + i.floorPosition;
         }
         #endregion
     }
@@ -158,8 +159,9 @@ public class JudgeLineMovement : MonoBehaviour
             return null;
         float dx = positionX[finger.index];
         List<NoteMovement> tempNoteList = new List<NoteMovement>();
-        foreach(NoteMovement i in notes)
+        for(int j = 0; j < notes.Count; j++)
         {
+            NoteMovement i = notes[j];
             if (i == null)
                 continue;
             if (i.Note.time - judgeTime.judgeTime > pgrTime)
@@ -168,7 +170,7 @@ public class JudgeLineMovement : MonoBehaviour
             {
                 if (i.notetype == 2 || i.notetype == 4)
                 {
-                    i.judge(pgrTime * timeFactor, finger);
+                    i.judge(pgrTime, finger);
                 }
                 else
                     tempNoteList.Add(i);
@@ -176,13 +178,19 @@ public class JudgeLineMovement : MonoBehaviour
         }
         if (tempNoteList.Count == 0)
             return null;
-        return tempNoteList[0];
+        NoteMovement note = tempNoteList[0];
+        for (int j = 0; j < tempNoteList.Count; j++)
+        {
+            if (note.Note.time > tempNoteList[j].Note.time)
+                note = tempNoteList[j];
+        }
+        return note;
     }
 
     void FixedUpdate()
     {
-        if (Math.Abs(pgrTime - GlobalSetting.musicProgress / timeFactor) >= 10)
-            pgrTime = GlobalSetting.musicProgress / timeFactor;
+        if (Math.Abs(pgrTime - GlobalSetting.musicProgress) >= .1f)
+            pgrTime = GlobalSetting.musicProgress;
     }
 
     void UpdateMovement()

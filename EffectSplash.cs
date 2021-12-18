@@ -4,26 +4,32 @@ using UnityEngine;
 
 public class EffectSplash : MonoBehaviour
 {
-    public float spd = 0;
-    public float a;
-    public float b;
-    public float rad;
-    public const float factor = 1f;
+    private float spd = 0;
+    private float a;
+    private float b;
+    private float rad;
     public float t = 0;
+    private Animation animation1;
+
+    void Awake()
+    {
+        animation1 = GetComponent<Animation>();
+    }
 
     // Start is called before the first frame update
     void Start()
     {
+        //animation1.Play("splashGradient");
+        t = 0;
         spd = Random.Range(0f, 1f) * 80f + 185f;
         rad = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-
     }
 
     // Update is called once per frame
-    void FixedUpdate()
+    void Update()
     {
-        t += Time.fixedDeltaTime * 2f;
-        a = (6.234f * Mathf.Pow(t, 3) - 49.572f * t * t + 49.197f * t + 14.964f) * factor;
+        t += Time.deltaTime * 2f;
+        a = (6.234f * Mathf.Pow(t, 3) - 49.572f * t * t + 49.197f * t + 14.964f);
         b = ((spd) * 9 * t / (8 * t + 1)) * 0.011f;
         transform.localScale = new Vector3(a, a, 1f);
         transform.localPosition = new Vector3(b * Mathf.Cos(rad), b * Mathf.Sin(rad));
@@ -36,8 +42,23 @@ public class EffectSplash : MonoBehaviour
                 gameObject.GetComponent<SpriteRenderer>().color.a);
     }
 
+    private void OnEnable()
+    {
+        animation1.Play("splashGradient");
+        t = 0;
+        spd = Random.Range(0f, 1f) * 80f + 185f;
+        rad = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+    }
+
+    private void OnDisable()
+    {
+        t = 0f;
+        transform.localPosition = new Vector3(0, 0, 0);
+        transform.localScale = new Vector3(0, 0, 0);
+    }
+
     public void DestroyThis()
     {
-        Destroy(gameObject);
+        //Destroy(gameObject);
     }
 }

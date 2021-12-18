@@ -7,6 +7,8 @@ using UnityEngine;
 using UnityEngine.UI;
 //using UnityEditorInternal;
 using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
+//using System.ComponentModel;
 
 public enum NoteStat{
     Perfect,
@@ -32,6 +34,8 @@ public class ScoreCounter
     public int combo;
     public int maxcombo;
     public int numOfNotes;
+    public int early;
+    public int late;
     public void add(NoteStat status)
     {
         switch (status)
@@ -61,26 +65,31 @@ public class ScoreCounter
             GlobalSetting.lineStat = JudgeLineStat.None;
     }
     public float score { get { return 1e6f * (perfectCnt * 0.9f + goodCnt * 0.585f + maxcombo * 0.1f) / numOfNotes; } }
+    public float accuracy { get { return (perfectCnt + goodCnt * 0.65f) / numOfNotes; } }
 }
 
 public static class GlobalSetting
 {
     public static bool playing { get; set; }
-    public static string chartpath = "E:\\DESKTOP\\001四月の雨 IN Lv.12\\四月の雨.json";
-    public static string chartName = "四月の雨";
-    public static string musicPath = "E:\\DESKTOP\\001四月の雨 IN Lv.12\\四月の雨.wav";
-    public static string illustrationPath = "E:\\DESKTOP\\001四月の雨 IN Lv.12\\四月の雨.png";
+    public static string chartpath = "E:\\DESKTOP\\pumian\\001四月の雨 IN Lv.12\\四月の雨.json";
+    public static string chartName = "Chart Name";
+    public static string musicPath = "E:\\DESKTOP\\pumian\\001四月の雨 IN Lv.12\\四月の雨.wav";
+    public static string illustrationPath = "E:\\DESKTOP\\pumian\\001四月の雨 IN Lv.12\\四月の雨.png";
     public static int formatVersion = 3;
     public static Dictionary<float, int> highLightedNotes = new Dictionary<float, int>();
-    public static float globalNoteScale = 0.24f;
+    public static float globalNoteScale = 0.3f;
     public static float musicProgress = 0f;
     public static bool highLight;
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR
+    public static bool autoPlay = true;
+#else
     public static bool autoPlay = false;
+#endif
     public static ScoreCounter scoreCounter = new ScoreCounter();
     public static float noteSpeedFactor = 1f;
     public static float offset;
     public static float userOffset;
-    public static string difficulty;
+    public static string difficulty = "Diff";
     public static JudgeLineStat lineStat = JudgeLineStat.AP;
     public static Dictionary<JudgeLineStat, Color> lineColors = new Dictionary<JudgeLineStat, Color>();
     public static Dictionary<int, AudioClip> tapSounds = new Dictionary<int, AudioClip>();
@@ -89,11 +98,14 @@ public static class GlobalSetting
     public static float aspect { get { return screenWidth / screenHeight; } }
     public static float widthOffset { get { return (Screen.width - screenWidth) / 2f; } }
 
+    public static bool oldTexture = false;
+    public static Sprite backgroundImage = null;
+
     public static List<JudgeLineMovement> lines = new List<JudgeLineMovement>();
 
     public static void playNoteSound(int notetype, Vector3 pos)
     {
-        AudioSource.PlayClipAtPoint(tapSounds[notetype], Camera.main.transform.position);
+        AudioSource.PlayClipAtPoint(tapSounds[notetype], Camera.main.transform.position, 0.6f);
     }
 
     public static void reset()
@@ -103,6 +115,11 @@ public static class GlobalSetting
         musicProgress = 0f;
         scoreCounter = new ScoreCounter();
         noteSpeedFactor = 1f;
+        lines.Clear();
+        lineColors.Clear();
+        tapSounds.Clear();
+        lineStat = JudgeLineStat.AP;
+        ObjectPool.GetInstance().reset();
     }
 }
 
@@ -116,6 +133,7 @@ public class Main : MonoBehaviour
     private Chart json = new Chart();
     public GameObject Line;
     public Image illustration;
+    public Image illustrationBlur;
     public Text comboText;
     public Text scoreText;
     private float aspect = 16f / 9f;
@@ -123,11 +141,11 @@ public class Main : MonoBehaviour
     public AudioClip music;
 
     // Start is called before the first frame update
-    void Awake()
+    void Start()
     {
-#if UNITY_EDITOR
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR
         string platformPrefix = "file://";
-#else 
+#else
         string platformPrefix = "file://";
 #endif
         if (!GlobalSetting.autoPlay)
@@ -147,16 +165,20 @@ public class Main : MonoBehaviour
         while (!a.isDone) { };
         Sprite sprite = Sprite.Create(a.texture, new Rect(0, 0, a.texture.width, a.texture.height), new Vector2(0.5f, 0.5f));
         illustration.sprite = sprite;
+        GlobalSetting.backgroundImage = sprite;
         Application.targetFrameRate = 120;
         GlobalSetting.playing = false;
-        /*Material temp = new Material(Shader.Find("Unlit/IllustrationShader"));
-        temp.mainTexture = a.texture;
+        /*Material temp = new Material(Shader.Find("Custom/BackBlur"));
+        //temp.mainTexture = a.texture;
         temp.name = "tempMaterial";
         //temp.SetFloat("_BlurSize", 100f);
-        illustration.material = temp;*/
+        illustrationBlur.material = temp;*/
+        //GameObject.Find("BackGroundCanvas").transform.SetSiblingIndex(100);
 
-
-        init(GlobalSetting.chartpath);
+        if (!GlobalSetting.chartpath.Contains(".pec"))
+            init(GlobalSetting.chartpath);
+        else
+            init(GlobalSetting.chartpath, true);
         gameObject.AddComponent<AudioSource>();
         gameObject.GetComponent<AudioSource>().playOnAwake = false;
         gameObject.GetComponent<AudioSource>().clip = music;
@@ -174,11 +196,13 @@ public class Main : MonoBehaviour
             i.GetComponent<Animation>().Play("StartGradientChartName");
             i.GetComponent<Text>().text = $"{GlobalSetting.chartName}\n\n";
         }
-        Debug.Log(GlobalSetting.highLight);
         StartCoroutine(StartPlay());
         GameObject.Find("SongNameLeftBottom").GetComponent<Text>().text = "   " + GlobalSetting.chartName;
         GameObject.Find("DiffText").GetComponent<Text>().text = GlobalSetting.difficulty + "  ";
+        GameObject.Find("VersionText").GetComponent<Text>().text = $"RE:Phigros v{Application.version} by totorowldox\n";
         //gameObject.GetComponent<AudioSource>().priority = 10;
+        //LunarConsolePluginInternal.LunarConsoleConfig.consoleEnabled = true;
+
     }
 
     private IEnumerator StartPlay()
@@ -191,11 +215,16 @@ public class Main : MonoBehaviour
 
     void Update()
     {
+        if (music.length - gameObject.GetComponent<AudioSource>().time <= 0.1f)
+        {
+            GlobalSetting.playing = false;
+            SceneManager.LoadSceneAsync("LevelOver 1");
+            return;
+        }
         if (Camera.main.aspect >= aspect)
         {
             GlobalSetting.screenHeight = Screen.height;
             GlobalSetting.screenWidth = Screen.height * aspect;
-            Debug.Log($"{GlobalSetting.screenHeight} * {GlobalSetting.screenWidth}");
         }
         else
         {
@@ -211,22 +240,16 @@ public class Main : MonoBehaviour
             m_lastupdateshowtime = Time.realtimeSinceStartup;
             m_frames = 0;
         }
-
-        if (music.length - gameObject.GetComponent<AudioSource>().time <= 0.1f)
-        {
-            GlobalSetting.playing = false;
-        }
         GlobalSetting.musicProgress = Mathf.Max(gameObject.GetComponent<AudioSource>().time - json.offset - GlobalSetting.userOffset, 0);
         if (GlobalSetting.scoreCounter.combo >= 3)
-            comboText.text = $"<size={(int)(Screen.height / 24)}>{GlobalSetting.scoreCounter.combo}</size>\n<size={(int)(Screen.height / 25 / 1.875f)}>{(GlobalSetting.autoPlay ? "AUTOPLAY" : "COMBO")}</size>";
+            comboText.text = $"{GlobalSetting.scoreCounter.combo}\n<size=24>{(GlobalSetting.autoPlay ? "Autoplay" : "combo")}</size>";
         else
             comboText.text = "";
-        scoreText.text = $"\n<size={(int)(Screen.height / 25)}>{Mathf.RoundToInt(GlobalSetting.scoreCounter.score).ToString().PadLeft(7, '0')}</size>  ";
-        scoreText.GetComponent<RectTransform>().anchoredPosition = new Vector2(-10 - GlobalSetting.widthOffset, -10);
+        scoreText.text = $"{Mathf.RoundToInt(GlobalSetting.scoreCounter.score).ToString().PadLeft(7, '0')} ";
+        scoreText.GetComponent<RectTransform>().anchoredPosition = new Vector2(-20 - GlobalSetting.widthOffset / 2, -20);
         GameObject.Find("SongNameLeftBottom").GetComponent<RectTransform>().anchoredPosition = new Vector2(10 + GlobalSetting.widthOffset / 2, 10);
         GameObject.Find("DiffText").GetComponent<RectTransform>().anchoredPosition = new Vector2(-10 - GlobalSetting.widthOffset / 2, 10);
     }
-
 
     void OnGUI()
     {
@@ -255,6 +278,7 @@ public class Main : MonoBehaviour
         chart = sr.ReadToEnd();
         sr.Close();
         json = JsonUtility.FromJson<Chart>(chart);
+        preparationChart();
         int i = 0;
         foreach (judgeLine l in json.judgeLineList)
         {
@@ -264,6 +288,68 @@ public class Main : MonoBehaviour
             //InternalEditorUtility.AddTag($"Note_Line{i - 1}");
             Debug.Log($"Line instatiated. ID: {i}");
             i++;
+        }
+    }
+
+    private void init(string path, bool a)
+    {
+        StreamReader sr = new StreamReader(path, Encoding.Default);
+        chart = sr.ReadToEnd();
+        sr.Close();
+        json = Pec2Json.Convert(chart);//JsonUtility.FromJson<Chart>(chart);
+        StreamWriter sw = new StreamWriter(PlayerPrefs.GetString("chartFolderPath", "") + "\\cachedJson.json");
+        sw.Write(JsonUtility.ToJson(json));
+        sw.Close();
+        preparationChart();
+        int i = 0;
+        foreach (judgeLine l in json.judgeLineList)
+        {
+            GameObject t = Instantiate(Line);
+            t.GetComponent<JudgeLineMovement>().id = i;
+            t.GetComponent<JudgeLineMovement>().line = l;
+            //InternalEditorUtility.AddTag($"Note_Line{i - 1}");
+            //Debug.Log($"Line instatiated. ID: {i}");
+            i++;
+        }
+    }
+
+    private void preparationChart()
+    {
+        foreach(judgeLine line in json.judgeLineList)
+        {
+            float tempBpm = line.bpm;
+            float factor = 1.875f / tempBpm;
+            foreach (note n in line.notesAbove)
+            {
+                n.time = n.time * factor;
+                n.holdTime = n.holdTime * factor;
+            }
+                
+            foreach (note n in line.notesBelow)
+            {
+                n.time = n.time * factor;
+                n.holdTime = n.holdTime * factor;
+            }
+            foreach (judgeLineSpeedEvent e in line.speedEvents)
+            {
+                e.startTime = e.startTime * factor;
+                e.endTime = e.endTime * factor;
+            }
+            foreach (judgeLineEvent e in line.judgeLineDisappearEvents)
+            {
+                e.startTime = e.startTime * factor;
+                e.endTime = e.endTime * factor;
+            }
+            foreach (judgeLineEvent e in line.judgeLineRotateEvents)
+            {
+                e.startTime = e.startTime * factor;
+                e.endTime = e.endTime * factor;
+            }
+            foreach (judgeLineEvent e in line.judgeLineMoveEvents)
+            {
+                e.startTime = e.startTime * factor;
+                e.endTime = e.endTime * factor;
+            }
         }
     }
 }
