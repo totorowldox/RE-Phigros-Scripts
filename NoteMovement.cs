@@ -18,7 +18,7 @@ public class NoteMovement : MonoBehaviour
     public GameObject badTap;
     private float holdEffectCnt = 0.2f;
     private float disappearTime;
-    private NoteStat status = NoteStat.None;
+    public NoteStat status = NoteStat.None;
     private float destroyTime;
     private bool holdMissed = false;
     private bool holdCatched = false;
@@ -31,8 +31,6 @@ public class NoteMovement : MonoBehaviour
     //优化
     public JudgeLineMovement parentLine { get { return GlobalSetting.lines[parentLineId]; } }
 
-
-
     // Start is called before the first frame update
     void Start()
     {
@@ -43,8 +41,8 @@ public class NoteMovement : MonoBehaviour
         speedFactor = GlobalSetting.noteSpeedFactor * 3f;
         if (notetype == 3)
         {
-            gameObject.transform.localScale = new Vector3(0.1f, isAbove / 2.0f, 1);
-            holdRealLength = speedFactor * Note.speed * 0.2f * Note.holdTime / 2f;
+            gameObject.transform.localScale = new Vector3(1 / transform.parent.localScale.x, isAbove / transform.parent.localScale.y, 1);
+            holdRealLength = 3f * Note.speed * 0.2f * Note.holdTime / 2f;
             gameObject.transform.GetChild(0).localScale = new Vector3(GlobalSetting.globalNoteScale, GlobalSetting.globalNoteScale, 1.0f);
             gameObject.transform.GetChild(1).localScale = new Vector3(GlobalSetting.globalNoteScale, holdRealLength, 1.0f);
             gameObject.transform.GetChild(2).localScale = new Vector3(GlobalSetting.globalNoteScale, GlobalSetting.globalNoteScale, 1.0f);
@@ -53,7 +51,7 @@ public class NoteMovement : MonoBehaviour
             gameObject.transform.GetChild(2).localPosition = new Vector3(0, GlobalSetting.globalNoteScale / 2f + holdRealLength * 19, 0);
         }
         else
-            gameObject.transform.localScale = new Vector3(GlobalSetting.globalNoteScale / 10, isAbove * GlobalSetting.globalNoteScale / 2, 1);
+            gameObject.transform.localScale = new Vector3(GlobalSetting.globalNoteScale / transform.parent.localScale.x, isAbove * GlobalSetting.globalNoteScale / transform.parent.localScale.y, 1);
         disappearTime = (Note.type != 3 ? (Note.time + parentLine.judgeTime.bTime) : (Note.time + Note.holdTime));
         status = NoteStat.None;
         if (!GlobalSetting.tapSounds.ContainsKey(notetype))
@@ -66,8 +64,8 @@ public class NoteMovement : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        
-        
+
+        speedFactor = GlobalSetting.noteSpeedFactor * 4f / GlobalSetting.aspect;
         if (status == NoteStat.Perfect && (notetype == 2 || notetype == 4))
         {
             transform.localPosition = new Vector3(transform.localPosition.x,
@@ -116,7 +114,6 @@ public class NoteMovement : MonoBehaviour
             transform.localPosition = new Vector3(transform.localPosition.x,
             0, transform.localPosition.z);
             gameObject.transform.GetChild(0).gameObject.GetComponent<SpriteRenderer>().color = new Color(0, 0, 0, 0);
-            holdLengthReset();
         }
         else
         {
@@ -124,14 +121,29 @@ public class NoteMovement : MonoBehaviour
             (float)(isAbove * (Note.floorPosition - parentLine.virtualPosY) *
             speedFactor), transform.localPosition.z);
         }
-        if (Note.time > 1e6) // FakeNote
+        if (notetype == 3)
+        holdLengthReset();
+        if (Note.time <= 1e9) // 隐藏过线Note
         {
             if (transform.localPosition.y * isAbove < 0)
                 thisRenderer.color = new Color(1, 1, 1, 0);
             else
                 thisRenderer.color = new Color(1, 1, 1, 1);
             if (transform.localPosition.y * isAbove < 0 && notetype == 3)
-                Destroy(gameObject);
+            {
+                gameObject.transform.GetChild(0).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
+                gameObject.transform.GetChild(1).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
+                gameObject.transform.GetChild(2).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
+            }
+            else if (notetype == 3)
+            {
+                if (!holdCatched && !holdMissed)
+                    gameObject.transform.GetChild(0).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 1f);
+                else
+                    gameObject.transform.GetChild(0).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0f);
+                gameObject.transform.GetChild(1).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 1f);
+                gameObject.transform.GetChild(2).gameObject.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 1f);
+            }
         }
         //判定↓
         if (GlobalSetting.autoPlay)
@@ -243,7 +255,7 @@ public class NoteMovement : MonoBehaviour
         if (Note.type == 3 && (holdCatched || holdOK))
         {
             holdEffectCnt += Time.deltaTime;
-            if (holdEffectCnt > 0.1f)
+            if (holdEffectCnt > 0.2f)
             {
                 /*holdEffect = Instantiate(tapEffect, new Vector2(
                     transform.parent.position.x + Mathf.Cos(parentLine.transform.eulerAngles.z * Mathf.Deg2Rad) * Note.positionX,
@@ -259,7 +271,7 @@ public class NoteMovement : MonoBehaviour
         {
             if (status == NoteStat.Perfect)
                 holdEffect.GetComponent<SpriteRenderer>().color = GlobalSetting.lineColors[JudgeLineStat.AP];
-            else if (status == NoteStat.Good)
+            else if (status == NoteStat.Good || status == NoteStat.Early || status == NoteStat.Late)
                 holdEffect.GetComponent<SpriteRenderer>().color = GlobalSetting.lineColors[JudgeLineStat.FC];
             else
                 Destroy(holdEffect);
@@ -268,18 +280,38 @@ public class NoteMovement : MonoBehaviour
 
     private void holdLengthReset()
     {
-        holdRealLength = speedFactor * Note.speed * 0.2f * (Note.time + Note.holdTime - parentLine.pgrTime) / 2f + GlobalSetting.globalNoteScale / 38f;
-        gameObject.transform.GetChild(1).localScale = new Vector3(GlobalSetting.globalNoteScale, holdRealLength, 1.0f);
-        gameObject.transform.GetChild(1).localPosition = new Vector3(0, 0, 0);
-        gameObject.transform.GetChild(2).localPosition = new Vector3(0, holdRealLength * 19 * holdLengthFactor, 0);
+        if (Note.time <= parentLine.pgrTime)
+        {
+            holdRealLength = (3f * Note.speed / 5f * (Note.time + Note.holdTime - parentLine.pgrTime) / 2f + GlobalSetting.globalNoteScale / 38f) * speedFactor / 2f;
+            gameObject.transform.GetChild(1).localScale = new Vector3(GlobalSetting.globalNoteScale, holdRealLength, 1.0f);
+            gameObject.transform.GetChild(1).localPosition = new Vector3(0, 0, 0);
+            gameObject.transform.GetChild(2).localPosition = new Vector3(0, holdRealLength * 19, 0);
+        }
+        else
+        {
+            holdRealLength = (3f * Note.speed * 0.2f * Note.holdTime / 4f * speedFactor);
+            try
+            {
+                gameObject.transform.GetChild(0).localScale = new Vector3(GlobalSetting.globalNoteScale, GlobalSetting.globalNoteScale, 1.0f);
+                gameObject.transform.GetChild(1).localScale = new Vector3(GlobalSetting.globalNoteScale, holdRealLength, 1.0f);
+                gameObject.transform.GetChild(2).localScale = new Vector3(GlobalSetting.globalNoteScale, GlobalSetting.globalNoteScale, 1.0f);
+
+                gameObject.transform.GetChild(1).localPosition = new Vector3(0, GlobalSetting.globalNoteScale / 2f, 0);
+                gameObject.transform.GetChild(2).localPosition = new Vector3(0, GlobalSetting.globalNoteScale / 2f + holdRealLength * 19, 0);
+            }
+            catch
+            {
+
+            }
+        }
     }
 
-    public void judge(float time, Finger f)
+    public bool judge(float time, Finger f)
     {
         if (f.phase == TouchPhase.Canceled)
-            return;
+            return false;
         if (status != NoteStat.None)
-            return;
+            return false;
         float deltaTime = Note.time - time;
         if (notetype == 1 && f.isFirstClick)
         {
@@ -314,29 +346,32 @@ public class NoteMovement : MonoBehaviour
                 parentLine.notes.Remove(this);
                 GlobalSetting.playNoteSound(notetype, transform.position);
             }
+            return true;
         }
-        else if (notetype == 2 && Mathf.Abs(deltaTime) < parentLine.judgeTime.bTime)
+        else if (notetype == 2 && Mathf.Abs(deltaTime) < parentLine.judgeTime.judgeTime)
         {
             status = NoteStat.Perfect;
             destroyTime = deltaTime;
             StartCoroutine(destroyDelayed(destroyTime));
             parentLine.notes.Remove(this);
+            return true;
         }
-        else if (notetype == 4 && Mathf.Abs(deltaTime) < parentLine.judgeTime.bTime && f.isNewFlick)
+        else if (notetype == 4 && Mathf.Abs(deltaTime) < parentLine.judgeTime.judgeTime && f.phase == TouchPhase.Moved)
         {
             status = NoteStat.Perfect;
             destroyTime = deltaTime;
             StartCoroutine(destroyDelayed(destroyTime));
             parentLine.notes.Remove(this);
+            return true;
         }
         else if (notetype == 3 && !holdOK && !holdMissed)
-        {
+        {      
             if (!holdCatched && f.isFirstClick)
             {
                 if (deltaTime > parentLine.judgeTime.gTime)
                 {
-                    status = NoteStat.Good;
-                    GlobalSetting.scoreCounter.early++;
+                    status = NoteStat.Early;
+                    //GlobalSetting.scoreCounter.early++;
                     GlobalSetting.playNoteSound(notetype, transform.position);
                 }
                 else if (deltaTime > -parentLine.judgeTime.gTime)
@@ -346,12 +381,13 @@ public class NoteMovement : MonoBehaviour
                 }
                 else
                 {
-                    status = NoteStat.Good;
-                    GlobalSetting.scoreCounter.late++;
+                    status = NoteStat.Late;
+                    //GlobalSetting.scoreCounter.late++;
                     GlobalSetting.playNoteSound(notetype, transform.position);
                 }
                 holdCatched = true;
                 parentLine.notes.Remove(this);
+                return true;
             }
             /*else
             {
@@ -367,7 +403,7 @@ public class NoteMovement : MonoBehaviour
             GlobalSetting.playNoteSound(notetype, transform.position);
             parentLine.notes.Remove(this);*/
         }
-        return;
+        return false;
     }
 
     private IEnumerator destroyDelayed(float delay)

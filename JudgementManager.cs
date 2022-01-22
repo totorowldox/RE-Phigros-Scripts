@@ -105,13 +105,17 @@ public class JudgementManager : MonoBehaviour
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR
     public void UpdateMouseInput()
     {
-        numOfFingers = 1;
+        
 
         if (Input.GetMouseButtonDown(0)) fingers[0].phase = TouchPhase.Began;
         else if (Input.GetMouseButton(0)) fingers[0].phase = TouchPhase.Moved;
         else if (Input.GetMouseButtonUp(0)) fingers[0].phase = TouchPhase.Canceled;
         fingers[0].newPosition = Input.mousePosition;
         fingers[0].CheckInput();
+        if (Input.GetMouseButton(0))
+            numOfFingers = 1;
+        else
+            numOfFingers = 0;
     }
 #endif
 
@@ -146,14 +150,15 @@ public class JudgementManager : MonoBehaviour
                     }
                 }
 
-                if (!fingers[i].isFirstClick || counter == 0)
+                if (counter == 0)
                     continue;
 
                 NoteMovement note = notesInJudge[0];
                 for (int j = 0; j < counter; j++)
                 {
-                    if (note.Note.time > notesInJudge[j].Note.time)
+                    if (note.Note.time >= notesInJudge[j].Note.time)
                         note = notesInJudge[j];
+                    note.judge(GlobalSetting.musicProgress, fingers[i]);
                 }
                 note.judge(GlobalSetting.musicProgress, fingers[i]);
             }
@@ -168,6 +173,6 @@ public class JudgementManager : MonoBehaviour
 
     public static bool NoteInJudgeArea(float fingerX, float noteX, int above)
     {
-        return (fingerX > noteX - GlobalSetting.globalNoteScale / 1.9f && fingerX < noteX + GlobalSetting.globalNoteScale / 1.9f);
+        return (fingerX > noteX - 0.6f && fingerX < noteX + 0.6f);
     }
 }

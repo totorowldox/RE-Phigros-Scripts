@@ -26,9 +26,11 @@ public class JudgeLineMovement : MonoBehaviour
     private const bool DEBUG = false;
     public double virtualPosY = 0;
     private double virtualPosYVersion1 = 0;
+    public Vector3 targetScale = new Vector3(10, 3, 1);
     public JudgeTime judgeTime = new JudgeTime();
-    public List<float> positionX = new List<float>();
+    public List<float> positionX = new List<float>(20);
     private SpriteRenderer sr = new SpriteRenderer();
+    public bool isImage = false;
 
     #region temp vars
     private Vector3 moveTarget = new Vector3();
@@ -64,7 +66,7 @@ public class JudgeLineMovement : MonoBehaviour
         judgeTime.bTime = 0.16f;
         judgeTime.gTime = 0.08f;
         judgeTime.judgeTime = 0.2f;
-        transform.localScale = new Vector3(10, 2, 1);
+        transform.localScale = targetScale;
         foreach (note i in line.notesAbove)
         {
             int t;
@@ -83,7 +85,7 @@ public class JudgeLineMovement : MonoBehaviour
                 GlobalSetting.highLightedNotes.Add(i.time, 1);
             InitNote(i.type, i, -1);
         }
-        for (int i = 0; i < 11; i++)
+        for (int i = 0; i < 20; i++)
             positionX.Add(0f);
         notes.Sort((l, r) =>
         {
@@ -129,10 +131,16 @@ public class JudgeLineMovement : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        sr.color = GlobalSetting.lineColors[GlobalSetting.lineStat];
+        if (GlobalSetting.playing)
+            sr.color = GlobalSetting.lineColors[GlobalSetting.lineStat];
 
         if (!GlobalSetting.playing)
+        {
+            if (isImage)
+                sr.color = Color.clear;
             return;
+        }
+            
 
         //pgrTime = GlobalSetting.musicProgress;  //Time convert
         pgrTime += Time.deltaTime;
@@ -141,36 +149,27 @@ public class JudgeLineMovement : MonoBehaviour
         UpdateMovement();
         UpdateRotation();
         UpdateAlpha();
-
-        #region SPEED EVENT
-        foreach (judgeLineSpeedEvent b in line.speedEvents)
-        {
-            judgeLineSpeedEvent i = b;
-            if (pgrTime < i.startTime) break;
-            if (pgrTime > i.endTime) continue;
-            virtualPosY = (pgrTime - i.startTime) * i.value + i.floorPosition;
-        }
-        #endregion
+        UpdateSpeed();
     }
 
     internal NoteMovement GetNearestNote(Finger finger)
     {
-        if (finger.phase == TouchPhase.Canceled)
-            return null;
         float dx = positionX[finger.index];
         List<NoteMovement> tempNoteList = new List<NoteMovement>();
         for(int j = 0; j < notes.Count; j++)
         {
             NoteMovement i = notes[j];
-            if (i == null)
-                continue;
-            if (i.Note.time - judgeTime.judgeTime > pgrTime)
-                break;
             if (JudgementManager.NoteInJudgeArea(dx, i.transform.localPosition.x, i.isAbove))
             {
-                if (i.notetype == 2 || i.notetype == 4)
+                if (i.status != NoteStat.None)
+                    continue;
+                if (i.Note.time - judgeTime.judgeTime > pgrTime)
+                    break;
+                if (i.notetype == 2 || i.notetype == 4) //flick和drag另外判定
                 {
-                    i.judge(pgrTime, finger);
+                    bool t = i.judge(pgrTime, finger);
+                    /*if (i.notetype == 4 && t) //如果判定了flick就不判定tap
+                        judgedFlick = true;*/
                 }
                 else
                     tempNoteList.Add(i);
@@ -182,7 +181,7 @@ public class JudgeLineMovement : MonoBehaviour
         for (int j = 0; j < tempNoteList.Count; j++)
         {
             if (note.Note.time > tempNoteList[j].Note.time)
-                note = tempNoteList[j];
+                note = tempNoteList[j]; //选time最小的note判定
         }
         return note;
     }
@@ -193,7 +192,7 @@ public class JudgeLineMovement : MonoBehaviour
             pgrTime = GlobalSetting.musicProgress;
     }
 
-    void UpdateMovement()
+    public virtual void UpdateMovement()
     {
         //if (!moving)
         //{
@@ -242,7 +241,7 @@ public class JudgeLineMovement : MonoBehaviour
         transform.position = Vector2.Lerp(moveFrom, moveTarget, (pgrTime - moveFromTime) / (moveTargetTime - moveFromTime));
     }
 
-    void UpdateRotation()
+    public virtual void UpdateRotation()
     {
         //if (!rotating)
         //{
@@ -276,7 +275,7 @@ public class JudgeLineMovement : MonoBehaviour
         //}
     }
 
-    void UpdateAlpha()
+    public virtual void UpdateAlpha()
     {
         //if (!appearing)
         //{
@@ -307,32 +306,31 @@ public class JudgeLineMovement : MonoBehaviour
             //    gameObject.GetComponent<SpriteRenderer>().color = new Color(0.96f, 0.96f, 0.66f, appearTarget);
             //}
             //else
-                gameObject.GetComponent<SpriteRenderer>().color = new Color(GlobalSetting.lineColors[GlobalSetting.lineStat].r, GlobalSetting.lineColors[GlobalSetting.lineStat].g, GlobalSetting.lineColors[GlobalSetting.lineStat].b, Mathf.Lerp(appearFrom, appearTarget, (pgrTime - appearFromTime) / (appearTargetTime - appearFromTime)));
+                sr.color = new Color(sr.color.r, sr.color.g, sr.color.b, Mathf.Lerp(appearFrom, appearTarget, (pgrTime - appearFromTime) / (appearTargetTime - appearFromTime)));
         //}
     }
 
-    void OnGUI()
+    public virtual void UpdateSpeed()
     {
-        Event @event = Event.current;
-        if (!@event.isKey)
-            return;
+        foreach (judgeLineSpeedEvent b in line.speedEvents)
+        {
+            judgeLineSpeedEvent i = b;
+            if (pgrTime < i.startTime) break;
+            if (pgrTime > i.endTime) continue;
+            virtualPosY = (pgrTime - i.startTime) * i.value + i.floorPosition;
+        }
     }
 
-    void ResetScale()
+    public void ResetScale()
     {
+        Debug.Log("aaa");
         StartCoroutine(ResetScaleCoroutine());
     }
 
     private IEnumerator ResetScaleCoroutine()
     {
         yield return new WaitForSeconds(0.2f);
-        transform.localScale = new Vector3(10, 2, 1);
-        yield return new WaitForSeconds(1f);
-        foreach(NoteMovement i in notes)
-        {
-            i.gameObject.SetActive(true);
-            i.changeAlpha();
-        }
+        transform.localScale = targetScale;
     }
 
 }

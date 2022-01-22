@@ -1,10 +1,11 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
-using UnityEngine.Networking;
+using System.Collections;
 using System.IO;
+using Keiwando.NFSO;
+using System.Linq;
 
 public class SelectUIControl : MonoBehaviour
 {
@@ -16,6 +17,7 @@ public class SelectUIControl : MonoBehaviour
     public Toggle highlightToggle;
     private string tempPath;
     private float speed;
+    //private string internalPath = Application.persistentDataPath.Substring(0, Application.persistentDataPath.IndexOf("/Android"));
 
     // Start is called before the first frame update
     void Start()
@@ -26,6 +28,9 @@ public class SelectUIControl : MonoBehaviour
         //PlayerPrefs.SetString("chartFolderPath", tempPath);
         GameObject.Find("DiffInput").GetComponent<InputField>().text = PlayerPrefs.GetString("difficultyName", "SP Lv.?");
         chartNameUI.GetComponent<InputField>().text = PlayerPrefs.GetString("chartName", "Untitled");
+        GameObject.Find("SelectChart").GetComponent<Button>().interactable = false;
+        GameObject.Find("InfoDropdown").GetComponent<Dropdown>().options = getFolders(Application.persistentDataPath);
+        OnChangeDropdown();
     }
 
     public void OnClick()
@@ -36,9 +41,10 @@ public class SelectUIControl : MonoBehaviour
         GlobalSetting.musicPath = tempPath + "\\" + musicPathDropdown.captionText.text;
         GlobalSetting.illustrationPath = tempPath + "\\" + illustrationPathDropdown.captionText.text;
 #else
-        GlobalSetting.chartpath = chartPathDropdown.captionText.text;
-        GlobalSetting.musicPath = musicPathDropdown.captionText.text;
-        GlobalSetting.illustrationPath = illustrationPathDropdown.captionText.text;
+        //tempPath = Path.Combine(internalPath, tempPath.Substring(tempPath.IndexOf("/0") + 2, tempPath.Length));
+        GlobalSetting.chartpath = Path.Combine(tempPath, chartPathDropdown.captionText.text);
+        GlobalSetting.musicPath = Path.Combine(tempPath, musicPathDropdown.captionText.text);
+        GlobalSetting.illustrationPath = Path.Combine(tempPath, illustrationPathDropdown.captionText.text);
 #endif
         GlobalSetting.highLight = highlightToggle.isOn;
         GlobalSetting.difficulty = GameObject.Find("DiffInput").GetComponent<InputField>().text;
@@ -47,15 +53,28 @@ public class SelectUIControl : MonoBehaviour
         PlayerPrefs.SetString("difficultyName", GlobalSetting.difficulty);
         PlayerPrefs.SetString("chartName", GlobalSetting.chartName);
         //PlayerPrefs.SetInt("userOffset", GlobalSetting.userOffset);
+        PlayerPrefs.Save();
+        GlobalSetting.autoPlay = GameObject.Find("AutoToggle").GetComponent<Toggle>().isOn;
+        GlobalSetting.usingApi = false;
         SceneManager.LoadSceneAsync("LoadingScene");
     }
 
     public void OnClickPath()
     {
         tempPath = pathSelector.text;
-        chartPathDropdown.options = getFileName(tempPath, "");
+        chartPathDropdown.options = getFileName(tempPath, ".json", ".pec");
         musicPathDropdown.options = getFileName(tempPath, ".wav", ".ogg", ".mp3");
         illustrationPathDropdown.options = getFileName(tempPath, ".png", ".bmp", ".jpg");
+        try
+        {
+            string t = getFileName(tempPath, ".csv").FirstOrDefault().text;
+            if (t.Contains("line.csv"))
+                GlobalSetting.lineImage = new CSVReader(Path.Combine(tempPath, t));
+        }
+        catch
+        {
+
+        }
     }
 
     public static List<Dropdown.OptionData> getFileName(string path, params string[] typeE)
@@ -67,13 +86,18 @@ public class SelectUIControl : MonoBehaviour
             foreach (FileInfo f in root.GetFiles())
                 if (f.FullName.Trim().EndsWith(type))
                 {
-#if UNITY_EDITOR || UNITY_STANDALONE_WIN
                     list.Add(new Dropdown.OptionData(f.Name.Trim()));
-#else
-                    list.Add(new Dropdown.OptionData(f.FullName.Trim()));
-#endif
                 }
         }
+        return list;
+    }
+
+    public static List<Dropdown.OptionData> getFolders(string path)
+    {
+        List<Dropdown.OptionData> list = new List<Dropdown.OptionData>();
+        DirectoryInfo root = new DirectoryInfo(path);
+        foreach (DirectoryInfo f in root.GetDirectories())
+                list.Add(new Dropdown.OptionData(f.Name.Trim()));
         return list;
     }
 
@@ -81,5 +105,34 @@ public class SelectUIControl : MonoBehaviour
     {
         speed = float.Parse(GameObject.Find("SpeedDropdown").GetComponent<Dropdown>().captionText.text.Trim('x'));
         GlobalSetting.noteSpeedFactor = speed;
+    }
+
+    public void SelectedChart()
+    {
+        NativeFileSO.shared.OpenFile(SupportedFilePreferences.supportedFileTypes, Callback);
+    }
+
+    private void Callback(bool wasFileOpened, OpenedFile file)
+    {
+        if (wasFileOpened)
+        {
+        }
+    }
+
+    public void OnChangeDropdown()
+    {
+        string t = GameObject.Find("InfoDropdown").GetComponent<Dropdown>().captionText.text;
+
+        chartNameUI.GetComponent<InputField>().text = t.Split('.')[0];
+        try
+        {
+            GameObject.Find("DiffInput").GetComponent<InputField>().text = $"{t.Split('.')[1]} Lv." + t.Split('.')[2];
+        }
+        catch
+        {
+            GameObject.Find("DiffInput").GetComponent<InputField>().text = "SP Lv.?";
+        }
+        pathSelector.text = Path.Combine(Application.persistentDataPath, GameObject.Find("InfoDropdown").GetComponent<Dropdown>().captionText.text);
+        OnClickPath();
     }
 }

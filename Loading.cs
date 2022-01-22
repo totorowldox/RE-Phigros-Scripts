@@ -20,6 +20,7 @@ public class Loading : MonoBehaviour
     private IEnumerator AsyncLoading()
     {
         operation = SceneManager.LoadSceneAsync("PlayingScene");
+        operation.allowSceneActivation = false;
         yield return operation;
     }
 
@@ -32,5 +33,7 @@ public class Loading : MonoBehaviour
             time = 0;
             GetComponent<UnityEngine.UI.Text>().text += '.';
         }
+        if (operation.progress >= 0.9f)
+            operation.allowSceneActivation = true;
     }
 }
