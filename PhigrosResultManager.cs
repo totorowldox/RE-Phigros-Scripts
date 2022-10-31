@@ -16,14 +16,14 @@ public class PhigrosResultManager : MonoBehaviour
             lastScore = SaveManager.GetScore(GlobalSetting.chart);
         }
         catch { }
-        int deltaScore = Mathf.RoundToInt(GlobalSetting.scoreCounter.score) - lastScore;
+        int deltaScore = Mathf.RoundToInt(GlobalSetting.scoreCounter.Score) - lastScore;
         GameObject.Find("SongsName").GetComponent<Text>().text = GlobalSetting.chartName;
         GameObject.Find("Perfect").GetComponent<Text>().text = GlobalSetting.scoreCounter.perfectCnt.ToString();
         GameObject.Find("Good").GetComponent<Text>().text = GlobalSetting.scoreCounter.goodCnt.ToString();
         GameObject.Find("Bad").GetComponent<Text>().text = GlobalSetting.scoreCounter.badCnt.ToString();
         GameObject.Find("Miss").GetComponent<Text>().text = GlobalSetting.scoreCounter.missCnt.ToString();
-        GameObject.Find("Accuracy").GetComponent<Text>().text = (GlobalSetting.scoreCounter.accuracy * 100f).ToString("0.00") + "%";
-        GameObject.Find("ScoreText").GetComponent<Text>().text = Mathf.RoundToInt(GlobalSetting.scoreCounter.score).ToString().PadLeft(7, '0');
+        GameObject.Find("Accuracy").GetComponent<Text>().text = (GlobalSetting.scoreCounter.Accuracy * 100f).ToString("0.00") + "%";
+        GameObject.Find("ScoreText").GetComponent<Text>().text = Mathf.RoundToInt(GlobalSetting.scoreCounter.Score).ToString().PadLeft(7, '0');
 
         if (GlobalSetting.autoPlay)
             GameObject.Find("History").GetComponent<Text>().text = "<color=red>AUTO PLAY</color>";
@@ -38,8 +38,8 @@ public class PhigrosResultManager : MonoBehaviour
         GameObject.Find("Early").GetComponent<Text>().text = GlobalSetting.scoreCounter.early.ToString();
         GameObject.Find("Late").GetComponent<Text>().text = GlobalSetting.scoreCounter.late.ToString();
         if (!GlobalSetting.autoPlay)
-            SaveManager.SaveScore(GlobalSetting.chart, Mathf.RoundToInt(GlobalSetting.scoreCounter.score).ToString().PadLeft(7, '0'));
-        getRank(GlobalSetting.scoreCounter.score);
+            SaveManager.SaveScore(GlobalSetting.chart, Mathf.RoundToInt(GlobalSetting.scoreCounter.Score).ToString().PadLeft(7, '0'));
+        getRank(GlobalSetting.scoreCounter.Score);
         PlayerPrefs.Save();
         StartCoroutine(ClearCamera());
     }
@@ -67,7 +67,7 @@ public class PhigrosResultManager : MonoBehaviour
     }
     public void RetryButtonClicked()
     {
-        GlobalSetting.reset();
+        GlobalSetting.Reset();
         SceneManager.LoadSceneAsync("PlayingScene");
     }
     private IEnumerator ClearCamera()

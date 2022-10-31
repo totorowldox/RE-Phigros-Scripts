@@ -1,23 +1,19 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public class Finger
 {
-    public int index;
     public TouchPhase phase;
     public Vector2[] lastPositions = new Vector2[50];
     public Vector2 newPosition;
     Vector3 screenPosition;
     Vector3 worldPosition;
     public bool isNewFlick;
-    public bool isFirstClick
-    {
-        get
-        {
-            return phase == TouchPhase.Began;
-        }
-    }
+    private TouchPhase lastPhase = TouchPhase.Canceled;
+    public bool IsFirstClick => lastPhase == TouchPhase.Began || phase == TouchPhase.Began;
     int oldPosCounter;
     public void ClearOldPoss()
     {
@@ -53,6 +49,18 @@ public class Finger
         }
 
     }
+
+    public void UpdatePhase(TouchPhase touchPhase)
+    {
+        lastPhase = phase;
+        phase = touchPhase;
+    }
+
+    public void ClearTapFlag()
+    {
+        lastPhase = TouchPhase.Canceled;
+        phase = TouchPhase.Moved;
+    }
 }
 
 
@@ -63,7 +71,7 @@ public class JudgementManager : MonoBehaviour
     public int numOfFingers;
     public static JudgementManager m_instance;
 
-    NoteMovement[] notesInJudge = new NoteMovement[20];
+    private List<NoteMovement> notesInJudge = new List<NoteMovement>();
 
     // Start is called before the first frame update
     void Start()
@@ -80,12 +88,12 @@ public class JudgementManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-#if UNITY_STANDALONE_WIN || UNITY_EDITOR
+#if UNITY_EDITOR
         UpdateMouseInput();//PC
 #else
         UpdateTouchInput();//Mobile
 #endif
-
+        
         UpdateJudge();
     }
 
@@ -95,9 +103,8 @@ public class JudgementManager : MonoBehaviour
         for (int i = 0; i < numOfFingers; i++)
         {
             Touch touch = Input.GetTouch(i);
-            fingers[i].phase = touch.phase;
+            fingers[i].UpdatePhase(touch.phase);
             fingers[i].newPosition = touch.position;
-            fingers[i].index = i;
             fingers[i].CheckInput();
         }
     }
@@ -123,56 +130,62 @@ public class JudgementManager : MonoBehaviour
     {
         if (numOfFingers == 0)
             return;
-        for (int j = 0; j < GlobalSetting.lines.Count; j++)
+        foreach (var i in GlobalSetting.lines)
         {
             for (int k = 0; k < numOfFingers; k++)
             {
-                JudgeLineMovement i = GlobalSetting.lines[j];
-                float dx = GetLocalPosition(fingers[k].newPosition, i.transform).x;
-                i.positionX[k] = dx;
+                i.positionX[k] = GetLocalPosition(fingers[k].newPosition, i.transform).x;
             }
         }
 
-        if (numOfFingers > 0)
+        float pTime = GlobalSetting.lines[0].pgrTime;
+        bool judgedFlick;
+        float judgedFlickTime;
+        
+        for (int i = 0; i < numOfFingers; i++)
         {
-            for (int i = 0; i < numOfFingers; i++)
+            judgedFlick = false;
+            judgedFlickTime = 999999f;
+            notesInJudge.Clear();
+            for (int k = 0; k < GlobalSetting.lines.Count; k++)
             {
-                int counter = 0;
-                //GameObject[] tList = new GameObject[100];
-                //tList = GameObject.FindGameObjectsWithTag("Lines");
-                for (int k = 0; k < GlobalSetting.lines.Count; k++)
+                var ret = GlobalSetting.lines[k].GetNearestNote(fingers[i], GlobalSetting.lines[k].positionX[i]);
+                var n = ret.note;
+                if (n != null)
                 {
-                    NoteMovement n = GlobalSetting.lines[k].GetNearestNote(fingers[i]);
-                    if (n != null)
-                    {
-                        notesInJudge[counter] = n;
-                        counter++;
-                    }
+                    notesInJudge.Add(n);
                 }
 
-                if (counter == 0)
-                    continue;
-
-                NoteMovement note = notesInJudge[0];
-                for (int j = 0; j < counter; j++)
+                if (ret.flickTime <= 99999f)
                 {
-                    if (note.Note.time >= notesInJudge[j].Note.time)
-                        note = notesInJudge[j];
-                    note.judge(GlobalSetting.musicProgress, fingers[i]);
+                    judgedFlick = true;
+                    judgedFlickTime = Math.Min(ret.flickTime, judgedFlickTime);
                 }
-                note.judge(GlobalSetting.musicProgress, fingers[i]);
             }
+
+            if (notesInJudge.Count == 0)
+                continue;
+
+            NoteMovement note = notesInJudge[0];
+            foreach (var t in notesInJudge)
+            {
+                if (note.Note.time > t.Note.time)
+                    note = t;
+            }
+
+            if (judgedFlick && note.Note.time > judgedFlickTime) //如果判定了flick且flick在tap前面
+            {
+                continue;
+            }
+            note.Judge(pTime, fingers[i]);
         }
     }
 
-    public static Vector3 GetLocalPosition(Vector3 worldPosition, Transform parent)
-    {
-        Vector3 localPosition = parent.InverseTransformPoint(worldPosition);
-        return localPosition;
-    }
+    private static Vector3 GetLocalPosition(Vector3 worldPosition, Transform parent) =>
+        parent.InverseTransformPoint(worldPosition);
 
-    public static bool NoteInJudgeArea(float fingerX, float noteX, int above)
+    public static bool NoteInJudgeArea(float fingerX, float noteX)
     {
-        return (fingerX > noteX - 0.6f && fingerX < noteX + 0.6f);
+        return (fingerX > noteX - 0.76f && fingerX < noteX + 0.76f);
     }
 }

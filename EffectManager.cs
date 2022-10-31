@@ -9,7 +9,7 @@ public class EffectManager : MonoBehaviour
     // Start is called before the first frame update 
     void Start()
     {
-        transform.localScale = new Vector3(GlobalSetting.globalNoteScale / 0.2f, GlobalSetting.globalNoteScale / 0.2f, GlobalSetting.globalNoteScale / 0.2f);
+        transform.localScale = new Vector3(GlobalSetting.globalNoteScale / 0.15f, GlobalSetting.globalNoteScale / 0.15f, GlobalSetting.globalNoteScale / 0.15f);
         //GetComponent<Animator>().Play("");
         sr3 = transform.GetChild(3).gameObject;
     }

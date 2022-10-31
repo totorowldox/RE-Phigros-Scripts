@@ -31,6 +31,9 @@ public class JudgeLineMovement : MonoBehaviour
     public List<float> positionX = new List<float>(20);
     private SpriteRenderer sr = new SpriteRenderer();
     public bool isImage = false;
+    private float speedFactor = 1f;
+
+    public bool alphaExtensionEnabled = false;
 
     #region temp vars
     private Vector3 moveTarget = new Vector3();
@@ -52,6 +55,15 @@ public class JudgeLineMovement : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+        Init();
+    }
+
+    public void Init()
+    {
+        sr = gameObject.GetComponent<SpriteRenderer>();
+        if(!isImage)
+            targetScale = new Vector2(200 * 2.5f * Camera.main.orthographicSize * Camera.main.aspect / sr.sprite.texture.width, 
+                200 * 0.008f * Camera.main.orthographicSize / sr.sprite.texture.height);
         timeFactor = 1.875f / line.bpm; //Proportional
         if (GlobalSetting.formatVersion == 1)
         {
@@ -87,21 +99,47 @@ public class JudgeLineMovement : MonoBehaviour
         }
         for (int i = 0; i < 20; i++)
             positionX.Add(0f);
-        notes.Sort((l, r) =>
+        notes.Sort((l, r) => l.Note.time.CompareTo(r.Note.time));
+        
+        foreach (var i in line.judgeLineRotateEvents)
         {
-            if (l.Note.time < r.Note.time)
-                return -1;
-            return 1;
-        });
-        sr = gameObject.GetComponent<SpriteRenderer>();
+            if (GlobalSetting.isMirror)
+            {
+                i.start = 360 - i.start;
+                i.end = 360 - i.end;
+            }
+        }
+        foreach (var i in line.judgeLineMoveEvents)
+        {
+            if (GlobalSetting.formatVersion is 3 or 114514)
+            {
+                if (GlobalSetting.isMirror)
+                {
+                    i.start = 1 - i.start;
+                    i.end = 1 - i.end;
+                }
+            }
+            else if (GlobalSetting.formatVersion == 1)
+            {
+                if (GlobalSetting.isMirror)
+                {
+                    float origin = i.start / 1000;
+                    i.start = i.start - origin + 800 - origin;
+                    origin = i.end / 1000;
+                    i.end = i.end - origin + 800 - origin;
+                }
+            }
+        }
     }
 
     private void InitNote(int type, note i, int fact)
     {
         GameObject t = new GameObject();
         Destroy(t);
+        if (GlobalSetting.isMirror)
+            i.positionX = -i.positionX;
         Vector3 temp = transform.position;
-        temp.x += i.positionX;
+        temp.x += i.positionX * 16f / 9f / GlobalSetting.aspect;// * .985f;
         temp.z = 0;
         switch (type)
         {
@@ -125,14 +163,17 @@ public class JudgeLineMovement : MonoBehaviour
         //t.tag = $"Note_Line{id}";
         t.transform.SetParent(transform);
         //t.SetActive(false);
-        notes.Add(t.GetComponent<NoteMovement>());
+        if (!i.isFake)
+        {
+            notes.Add(t.GetComponent<NoteMovement>());
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
         if (GlobalSetting.playing)
-            sr.color = GlobalSetting.lineColors[GlobalSetting.lineStat];
+            sr.color = !isImage?GlobalSetting.lineColors[GlobalSetting.lineStat]:Color.white;
 
         if (!GlobalSetting.playing)
         {
@@ -152,38 +193,38 @@ public class JudgeLineMovement : MonoBehaviour
         UpdateSpeed();
     }
 
-    internal NoteMovement GetNearestNote(Finger finger)
+    internal (NoteMovement note, float flickTime) GetNearestNote(Finger finger, float dx)
     {
-        float dx = positionX[finger.index];
-        List<NoteMovement> tempNoteList = new List<NoteMovement>();
-        for(int j = 0; j < notes.Count; j++)
+        var flickTime = 999999f;
+        var tempNoteList = new List<NoteMovement>();
+        var tolerance = judgeTime.judgeTime + pgrTime;
+        for(var j = 0; j < notes.Count; j++)
         {
-            NoteMovement i = notes[j];
-            if (JudgementManager.NoteInJudgeArea(dx, i.transform.localPosition.x, i.isAbove))
+            var i = notes[j];
+            if (i.Note.isFake)
+                continue;
+            if (!JudgementManager.NoteInJudgeArea(dx, i.cachedTransform.localPosition.x))
+                continue;
+            if (i.Note.time > tolerance)
+                break;
+            if (i.notetype is 2 or 4) //flick和drag另外判定
             {
-                if (i.status != NoteStat.None)
-                    continue;
-                if (i.Note.time - judgeTime.judgeTime > pgrTime)
-                    break;
-                if (i.notetype == 2 || i.notetype == 4) //flick和drag另外判定
-                {
-                    bool t = i.judge(pgrTime, finger);
-                    /*if (i.notetype == 4 && t) //如果判定了flick就不判定tap
-                        judgedFlick = true;*/
-                }
-                else
-                    tempNoteList.Add(i);
+                var suc = i.Judge(pgrTime, finger);
+                if (i.notetype == 4) //如果判定了flick就不判定tap
+                    flickTime = Math.Min(i.Note.time, flickTime);
             }
+            else
+                tempNoteList.Add(i);
         }
         if (tempNoteList.Count == 0)
-            return null;
-        NoteMovement note = tempNoteList[0];
-        for (int j = 0; j < tempNoteList.Count; j++)
+            return (null, flickTime);
+        var note = tempNoteList[0];
+        for (var j = 0; j < tempNoteList.Count; j++)
         {
             if (note.Note.time > tempNoteList[j].Note.time)
                 note = tempNoteList[j]; //选time最小的note判定
         }
-        return note;
+        return (note, flickTime);
     }
 
     void FixedUpdate()
@@ -192,138 +233,148 @@ public class JudgeLineMovement : MonoBehaviour
             pgrTime = GlobalSetting.musicProgress;
     }
 
-    public virtual void UpdateMovement()
+    protected virtual void UpdateMovement()
     {
         //if (!moving)
         //{
-        foreach (judgeLineEvent b in line.judgeLineMoveEvents)
-        {
-            judgeLineEvent i = b;
-            if (pgrTime < i.startTime) break;
-            if (pgrTime > i.endTime) continue;
-                if (GlobalSetting.formatVersion == 3)
-                {
-                    i.startTime = i.startTime < 0 ? 0 : i.startTime;
-                    i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
-                    Vector3 a = new Vector3();
-                    a.x = GlobalSetting.screenWidth * i.end + GlobalSetting.widthOffset;
-                    a.y = GlobalSetting.screenHeight * i.end2;
-                    a = Camera.main.ScreenToWorldPoint(a);
-                    a.z = 0;
-                    moveTarget = a;
-                    a.x = GlobalSetting.screenWidth * i.start + GlobalSetting.widthOffset;
-                    a.y = GlobalSetting.screenHeight * i.start2;
-                    a = Camera.main.ScreenToWorldPoint(a);
-                    a.z = 0;
-                    moveFrom = a;
-                }
-                else if (GlobalSetting.formatVersion == 1)
-                {
-                    i.startTime = i.startTime < 0 ? 0 : i.startTime;
-                    i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
-                    Vector3 a = new Vector3();
-                    a.x = i.end / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
-                    a.y = i.end % 1000 / 520 * GlobalSetting.screenHeight;
-                    a = Camera.main.ScreenToWorldPoint(a);
-                    a.z = 0;
-                    moveTarget = a;
-                    a.x = i.start / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
-                    a.y = i.start % 1000 / 520 * GlobalSetting.screenHeight;
-                    a = Camera.main.ScreenToWorldPoint(a);
-                    a.z = 0;
-                    moveFrom = a;
-                }
-                moveTargetTime = i.endTime;
-                moveFromTime = i.startTime;
-                //line.judgeLineMoveEvents.Remove(b);
-                //break;
-        }
-        transform.position = Vector2.Lerp(moveFrom, moveTarget, (pgrTime - moveFromTime) / (moveTargetTime - moveFromTime));
-    }
+        int easeType = 0;
 
-    public virtual void UpdateRotation()
-    {
-        //if (!rotating)
-        //{
-        foreach (judgeLineEvent b in line.judgeLineRotateEvents)
+        if (line.judgeLineMoveEvents.Count == 0)
+            return;
+        int j = 0;
+        //foreach (judgeLineEvent b in line.judgeLineMoveEvents)
+        for (j = 0; j < line.judgeLineMoveEvents.Count; j++)
         {
-            judgeLineEvent i = b;
-            if (pgrTime < i.startTime) break;
-            if (pgrTime > i.endTime) continue;
-            //MoveEvent(i.endTime - i.startTime, i);
+            if (pgrTime < line.judgeLineMoveEvents[j].startTime) break;
+        }
+
+        j = Mathf.Max(0, j - 1);
+        
+        judgeLineEvent i = line.judgeLineMoveEvents[j];
+        
+        if (GlobalSetting.formatVersion is 3 or 114514)
+        {
             i.startTime = i.startTime < 0 ? 0 : i.startTime;
             i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
-            rotateTarget = i.end;
-            rotateFrom = i.start;
-            //moveTargetTime = (i.endTime - i.startTime) * timeFactor * Time.deltaTime;
-            rotateTargetTime = i.endTime;
-            rotateFromTime = i.startTime;
-            //line.judgeLineRotateEvents.Remove(b);
-            //break;
+            Vector3 a = new Vector3();
+            a.x = GlobalSetting.screenWidth * i.end + GlobalSetting.widthOffset;
+            a.y = GlobalSetting.screenHeight * i.end2;
+            a.z = 10;
+            a = Camera.main.ScreenToWorldPoint(a);
+            a.z = 0;
+            moveTarget = a;
+            a.x = GlobalSetting.screenWidth * i.start + GlobalSetting.widthOffset;
+            a.y = GlobalSetting.screenHeight * i.start2;
+            a.z = 10;
+            a = Camera.main.ScreenToWorldPoint(a);
+            a.z = 0;
+            moveFrom = a;
         }
-            
-        //}
-        //else
-        //{
-            //if (pgrTime >= rotateTargetTime)
-            //{
-            //    rotating = false;
-            //    transform.rotation = Quaternion.Euler(0, 0, rotateTarget);
-            //}
-            //else
-                transform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(rotateFrom, rotateTarget, (pgrTime - rotateFromTime) / (rotateTargetTime - rotateFromTime)));
-        //}
-    }
-
-    public virtual void UpdateAlpha()
-    {
-        //if (!appearing)
-        //{
-        foreach (judgeLineEvent b in line.judgeLineDisappearEvents)
+        else if (GlobalSetting.formatVersion == 1)
         {
-            judgeLineEvent i = b;
-            if (pgrTime < i.startTime) break;
-            if (pgrTime > i.endTime) continue;
-            {
-                i.startTime = i.startTime < 0 ? 0 : i.startTime;
-                i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
-                appearTarget = i.end;
-                appearFrom = i.start;
-                appearTargetTime = i.endTime;
-                appearFromTime = i.startTime;
-                //line.judgeLineDisappearEvents.Remove(b);
-                //break;
-                //gameObject.GetComponent<SpriteRenderer>().color = new Color(0.96f, 0.96f, 0.66f, appearFrom);
-            }
+            i.startTime = i.startTime < 0 ? 0 : i.startTime;
+            i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
+            Vector3 a = new Vector3();
+            a.x = i.end / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
+            a.y = i.end % 1000 / 520 * GlobalSetting.screenHeight;
+            a.z = 10;
+            a = Camera.main.ScreenToWorldPoint(a);
+            a.z = 0;
+            moveTarget = a;
+            a.x = i.start / 1000 / 880 * GlobalSetting.screenWidth + GlobalSetting.widthOffset;
+            a.y = i.start % 1000 / 520 * GlobalSetting.screenHeight;
+            a.z = 10;
+            a = Camera.main.ScreenToWorldPoint(a);
+            a.z = 0;
+            moveFrom = a;
         }
-            
-        //}
-        //else
-        //{
-            //if (pgrTime >= appearTargetTime)
-            //{
-            //    appearing = false;
-            //    gameObject.GetComponent<SpriteRenderer>().color = new Color(0.96f, 0.96f, 0.66f, appearTarget);
-            //}
-            //else
-                sr.color = new Color(sr.color.r, sr.color.g, sr.color.b, Mathf.Lerp(appearFrom, appearTarget, (pgrTime - appearFromTime) / (appearTargetTime - appearFromTime)));
-        //}
+        moveTargetTime = i.endTime;
+        moveFromTime = i.startTime;
+        easeType = i.easeType;
+
+        var x = EaseUtils.GetEaseResult((EaseUtils.EaseType) easeType, 
+            pgrTime - moveFromTime, moveTargetTime - moveFromTime, 
+            moveFrom.x, moveTarget.x);
+        var y = EaseUtils.GetEaseResult((EaseUtils.EaseType) easeType, 
+            pgrTime - moveFromTime, moveTargetTime - moveFromTime, 
+            moveFrom.y, moveTarget.y);
+        transform.position = new Vector2(x, y);
     }
 
-    public virtual void UpdateSpeed()
+    protected virtual void UpdateRotation()
+    {
+        //if (!rotating)
+
+        int easeType = 0;
+        
+        if (line.judgeLineRotateEvents.Count == 0)
+            return;
+        int j = 0;
+        //foreach (judgeLineEvent b in line.judgeLineMoveEvents)
+        for (j = 0; j < line.judgeLineRotateEvents.Count; j++)
+        {
+            if (pgrTime < line.judgeLineRotateEvents[j].startTime) break;
+        }
+        j = Mathf.Max(0, j - 1);
+        judgeLineEvent i = line.judgeLineRotateEvents[j];
+        i.startTime = i.startTime < 0 ? 0 : i.startTime;
+        i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
+        rotateTarget = i.end;
+        rotateFrom = i.start;
+        rotateTargetTime = i.endTime;
+        rotateFromTime = i.startTime;
+        easeType = i.easeType;
+            
+        var angles = transform.localEulerAngles;
+        var z = EaseUtils.GetEaseResult((EaseUtils.EaseType) easeType, 
+            pgrTime - rotateFromTime, rotateTargetTime - rotateFromTime, 
+            rotateFrom, rotateTarget);
+        transform.localEulerAngles = new Vector3(angles.x, angles.y, z);
+    }
+
+    protected virtual void UpdateAlpha()
+    {
+        int easeType = 0;
+        
+        if (line.judgeLineDisappearEvents.Count == 0)
+            return;
+        int j = 0;
+        for (j = 0; j < line.judgeLineDisappearEvents.Count; j++)
+        {
+            if (pgrTime < line.judgeLineDisappearEvents[j].startTime) break;
+        }
+
+        j = Mathf.Max(0, j - 1);
+        judgeLineEvent i = line.judgeLineDisappearEvents[j];
+        i.startTime = i.startTime < 0 ? 0 : i.startTime;
+        i.endTime = i.endTime > 10000000 ? i.startTime + 1 : i.endTime;
+        appearTarget = i.end;
+        appearFrom = i.start;
+        appearTargetTime = i.endTime;
+        appearFromTime = i.startTime;
+        easeType = i.easeType;
+            
+        var color = sr.color;
+        var a = EaseUtils.GetEaseResult((EaseUtils.EaseType) easeType, 
+            pgrTime - appearFromTime, appearTargetTime - appearFromTime, 
+            appearFrom, appearTarget);
+        alphaExtensionEnabled = a < 0;
+        sr.color = new Color(color.r, color.g, color.b, a);
+    }
+
+    protected virtual void UpdateSpeed()
     {
         foreach (judgeLineSpeedEvent b in line.speedEvents)
         {
             judgeLineSpeedEvent i = b;
             if (pgrTime < i.startTime) break;
             if (pgrTime > i.endTime) continue;
-            virtualPosY = (pgrTime - i.startTime) * i.value + i.floorPosition;
+            virtualPosY = (pgrTime - i.startTime) * i.value * speedFactor + i.floorPosition;
         }
     }
 
     public void ResetScale()
     {
-        Debug.Log("aaa");
         StartCoroutine(ResetScaleCoroutine());
     }
 
@@ -331,6 +382,38 @@ public class JudgeLineMovement : MonoBehaviour
     {
         yield return new WaitForSeconds(0.2f);
         transform.localScale = targetScale;
+        if (GlobalSetting.is3D)
+        {
+            transform.eulerAngles = new Vector3(30, 0, 0);
+        }
+    }
+
+    public float CalculateNoteHeight(float time)
+    {
+        return CalculateNoteHeight_internal(time) - CalculateNoteHeight_internal(pgrTime);
+    }
+
+    public float CalculateHeightDistance(float first, float second)
+    {
+        return CalculateNoteHeight_internal(first) - CalculateNoteHeight_internal(second);
+    }
+
+    private float CalculateNoteHeight_internal(float time)
+    {
+        var ret = 0f;
+        foreach (var k in line.speedEvents) {
+            //if (time > k.endTime) continue;
+            if (time < k.startTime) break;
+            if (time > k.endTime)
+            {
+                ret += k.value * (k.endTime - k.startTime);
+            }
+            else
+            {
+                ret += k.value * (time - k.startTime);
+            }
+        }
+        return ret;
     }
 
 }

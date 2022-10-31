@@ -19,7 +19,6 @@ public class EffectSplash : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        //animation1.Play("splashGradient");
         t = 0;
         spd = Random.Range(0f, 1f) * 80f + 185f;
         rad = Random.Range(0f, 360f) * Mathf.Deg2Rad;

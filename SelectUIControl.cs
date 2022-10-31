@@ -22,7 +22,7 @@ public class SelectUIControl : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        GlobalSetting.reset();
+        GlobalSetting.Reset();
         tempPath = PlayerPrefs.GetString("chartFolderPath", "");
         pathSelector.text = tempPath;
         //PlayerPrefs.SetString("chartFolderPath", tempPath);
@@ -55,6 +55,9 @@ public class SelectUIControl : MonoBehaviour
         //PlayerPrefs.SetInt("userOffset", GlobalSetting.userOffset);
         PlayerPrefs.Save();
         GlobalSetting.autoPlay = GameObject.Find("AutoToggle").GetComponent<Toggle>().isOn;
+        GlobalSetting.isMirror = GameObject.Find("MirrorToggle").GetComponent<Toggle>().isOn;
+        GlobalSetting.is3D = GameObject.Find("3DToggle").GetComponent<Toggle>().isOn;
+        GlobalSetting.postProcessing = GameObject.Find("PostProcessingToggle").GetComponent<Toggle>().isOn;
         GlobalSetting.usingApi = false;
         SceneManager.LoadSceneAsync("LoadingScene");
     }
@@ -67,13 +70,13 @@ public class SelectUIControl : MonoBehaviour
         illustrationPathDropdown.options = getFileName(tempPath, ".png", ".bmp", ".jpg");
         try
         {
-            string t = getFileName(tempPath, ".csv").FirstOrDefault().text;
-            if (t.Contains("line.csv"))
+            string t = getFileName(tempPath, "line.csv").FirstOrDefault()?.text;
+            if (t != null)
                 GlobalSetting.lineImage = new CSVReader(Path.Combine(tempPath, t));
         }
         catch
         {
-
+            GlobalSetting.lineImage = null;
         }
     }
 
@@ -84,7 +87,7 @@ public class SelectUIControl : MonoBehaviour
         foreach (string type in typeE)
         {
             foreach (FileInfo f in root.GetFiles())
-                if (f.FullName.Trim().EndsWith(type))
+                if (f.FullName.ToLower().Trim().EndsWith(type))
                 {
                     list.Add(new Dropdown.OptionData(f.Name.Trim()));
                 }

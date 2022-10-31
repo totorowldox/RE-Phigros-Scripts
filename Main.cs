@@ -3,10 +3,12 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 //using UnityEditorInternal;
 using UnityEngine.Networking;
+using UnityEngine.Rendering.PostProcessing;
 using UnityEngine.SceneManagement;
 //using System.ComponentModel;
 
@@ -76,8 +78,8 @@ public class ScoreCounter
         if (GlobalSetting.lineStat != JudgeLineStat.None && (badCnt != 0 || missCnt != 0))
             GlobalSetting.lineStat = JudgeLineStat.None;
     }
-    public float score { get { return 1e6f * (perfectCnt * 0.9f + goodCnt * 0.585f + maxcombo * 0.1f) / numOfNotes; } }
-    public float accuracy { get { return (perfectCnt + goodCnt * 0.65f) / numOfNotes; } }
+    public float Score { get { return 1e6f * (perfectCnt * 0.9f + goodCnt * 0.585f + maxcombo * 0.1f) / numOfNotes; } }
+    public float Accuracy { get { return (perfectCnt + goodCnt * 0.65f) / numOfNotes; } }
 }
 
 public static class GlobalSetting
@@ -112,18 +114,21 @@ public static class GlobalSetting
     public static string chart = "";
     public static CSVReader lineImage = null;
     public static bool usingApi = false;
+    public static bool isMirror = false;
+    public static bool is3D = false;
+    public static bool postProcessing = false;
 
     public static bool oldTexture = false;
     public static Sprite backgroundImage = null;
 
     public static List<JudgeLineMovement> lines = new List<JudgeLineMovement>();
 
-    public static void playNoteSound(int notetype, Vector3 pos)
+    public static void PlayNoteSound(int notetype, Vector3 pos)
     {
         AudioSource.PlayClipAtPoint(tapSounds[notetype], Camera.main.transform.position, 0.6f);
     }
 
-    public static void reset()
+    public static void Reset()
     {
         playing = false;
         highLightedNotes.Clear();
@@ -152,6 +157,8 @@ public class Main : MonoBehaviour
     public Image illustrationBlur;
     public Text comboText;
     public Text scoreText;
+    public GameObject managers;
+    public Transform instantiateTransform;
     private float aspect = 16f / 9f;
     
     public AudioClip music;
@@ -167,6 +174,20 @@ public class Main : MonoBehaviour
 
     void Start()
     {
+        if (Camera.main.aspect >= aspect)
+        {
+            GlobalSetting.screenHeight = Screen.height;
+            GlobalSetting.screenWidth = Screen.height * aspect;
+        }
+        else
+        {
+            GlobalSetting.screenHeight = Screen.height;
+            GlobalSetting.screenWidth = Screen.width;
+        } 
+        
+        Camera.main.orthographicSize = 5 / (GlobalSetting.aspect) * (aspect);
+        Debug.Log($"height:{GlobalSetting.screenHeight}, width{GlobalSetting.screenWidth}");
+        
         gameObject.AddComponent<AudioSource>();
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR
         string platformPrefix = "file://";
@@ -176,23 +197,23 @@ public class Main : MonoBehaviour
         if (GlobalSetting.usingApi)
             platformPrefix = "";
         if (!GlobalSetting.autoPlay)
-            gameObject.AddComponent<JudgementManager>();
+            managers.AddComponent<JudgementManager>();
         try
         {
-            WWW a = new WWW(platformPrefix + GlobalSetting.musicPath);
-            //www.SendWebRequest();
-            //var clip = DownloadHandlerAudioClip.GetContent(www);
-            while (!a.isDone) { };
-            music = a.GetAudioClip();
+            var a = new WWW(platformPrefix + GlobalSetting.musicPath);
+            while(!a.isDone) {}
+
+            music = a.GetAudioClipCompressed();
 
             a = new WWW(platformPrefix + GlobalSetting.illustrationPath);
             //Illustration
-            while (!a.isDone) { };
+            while (!a.isDone) {}
             Sprite sprite = Sprite.Create(a.texture, new Rect(0, 0, a.texture.width, a.texture.height), new Vector2(0.5f, 0.5f));
             illustration.sprite = sprite;
             GlobalSetting.backgroundImage = sprite;
         }
         catch { }
+        
         
         Application.targetFrameRate = 120;
         GlobalSetting.playing = false;
@@ -202,6 +223,7 @@ public class Main : MonoBehaviour
         //temp.SetFloat("_BlurSize", 100f);
         illustrationBlur.material = temp;*/
         //GameObject.Find("BackGroundCanvas").transform.SetSiblingIndex(100);
+        
         if (!GlobalSetting.usingApi)
         {
             if (!GlobalSetting.chartpath.Contains(".pec"))
@@ -239,6 +261,14 @@ public class Main : MonoBehaviour
         {
             loadLineImage();
         }
+
+        if (GlobalSetting.is3D)
+        {
+            Camera.main.orthographic = false;
+        }
+
+        Camera.main.GetComponent<PostProcessLayer>().enabled = GlobalSetting.postProcessing;
+
     }
 
     private IEnumerator StartPlay()
@@ -260,8 +290,10 @@ public class Main : MonoBehaviour
 
     void Update()
     {
-        if (music.length - GlobalSetting.musicProgress <= 0.1f)
+        GlobalSetting.musicProgress = Mathf.Max(gameObject.GetComponent<AudioSource>().time - json.offset - GlobalSetting.userOffset, 0);
+        if (music.length - gameObject.GetComponent<AudioSource>().time <= 1f)
         {
+            Debug.Log("End");
             GlobalSetting.chart = chart;
             GlobalSetting.playing = false;
             if (operation == null)
@@ -271,6 +303,7 @@ public class Main : MonoBehaviour
             }
             return;
         }
+        
         if (Camera.main.aspect >= aspect)
         {
             GlobalSetting.screenHeight = Screen.height;
@@ -280,22 +313,25 @@ public class Main : MonoBehaviour
         {
             GlobalSetting.screenHeight = Screen.height;
             GlobalSetting.screenWidth = Screen.width;
-        }
+        } 
+        
         Camera.main.orthographicSize = 5 / (GlobalSetting.aspect) * (aspect);
+        
         //GlobalSetting.noteSpeedFactor = 1 / (GlobalSetting.aspect) * (aspect);
-        m_frames++;
-        if (Time.realtimeSinceStartup - m_lastupdateshowtime >= 1f)
-        {
-            m_fps = m_frames / (Time.realtimeSinceStartup - m_lastupdateshowtime);
-            m_lastupdateshowtime = Time.realtimeSinceStartup;
-            m_frames = 0;
-        }
-        GlobalSetting.musicProgress = Mathf.Max(gameObject.GetComponent<AudioSource>().time - json.offset - GlobalSetting.userOffset, 0);
         if (GlobalSetting.scoreCounter.combo >= 3)
-            comboText.text = $"{GlobalSetting.scoreCounter.combo}\n<size=24>{(GlobalSetting.autoPlay ? "Autoplay" : "COMBO")}</size>";
+            comboText.text = $"{GlobalSetting.scoreCounter.combo}\n<size=24>{(GlobalSetting.autoPlay ? "AUTOPLAY" : "COMBO")}</size>";
         else
             comboText.text = "";
-        scoreText.text = $"{Mathf.RoundToInt(GlobalSetting.scoreCounter.score).ToString().PadLeft(7, '0')} ";
+        scoreText.text = $"{Mathf.RoundToInt(GlobalSetting.scoreCounter.Score).ToString().PadLeft(7, '0')} ";
+
+        if (Input.GetKeyUp(KeyCode.RightArrow))
+        {
+            gameObject.GetComponent<AudioSource>().time += 5;
+        }
+        else if (Input.GetKeyUp(KeyCode.LeftArrow))
+        {
+            gameObject.GetComponent<AudioSource>().time += 1;
+        }
     }
 
     void OnGUI()
@@ -328,11 +364,11 @@ public class Main : MonoBehaviour
         int i = 0;
         foreach (judgeLine l in json.judgeLineList)
         {
-            GameObject t = Instantiate(Line);
+            GameObject t = Instantiate(Line, instantiateTransform);
             t.GetComponent<JudgeLineMovement>().id = i;
             t.GetComponent<JudgeLineMovement>().line = l;
             //InternalEditorUtility.AddTag($"Note_Line{i - 1}");
-            Debug.Log($"Line instatiated. ID: {i}");
+            Debug.Log($"Line instantiated. ID: {i}");
             i++;
         }
     }
@@ -340,8 +376,8 @@ public class Main : MonoBehaviour
     private void init(string path, bool a)
     {
         chart = File.ReadAllText(path);
-        json = Pec2Json.Convert(chart);//JsonUtility.FromJson<Chart>(chart);
-        try
+        json = Pec2Json.Chart123(chart);//JsonUtility.FromJson<Chart>(chart);
+        /*try
         {
             StreamWriter sw = new StreamWriter(Path.Combine(PlayerPrefs.GetString("chartFolderPath", ""), "cachedJson.json"));
             sw.Write(JsonUtility.ToJson(json));
@@ -349,17 +385,17 @@ public class Main : MonoBehaviour
         }
         catch
         {
-            Utils.MakeToast("Error occurs while saving cached json file.");
-        }
-        preparationChart();
+            //Utils.MakeToast("Error occurs while saving cached json file.");
+        }*/
+        //preparationChart();
         int i = 0;
         foreach (judgeLine l in json.judgeLineList)
         {
-            GameObject t = Instantiate(Line);
+            GameObject t = Instantiate(Line, instantiateTransform);
             t.GetComponent<JudgeLineMovement>().id = i;
             t.GetComponent<JudgeLineMovement>().line = l;
             //InternalEditorUtility.AddTag($"Note_Line{i - 1}");
-            //Debug.Log($"Line instatiated. ID: {i}");
+            Debug.Log($"Line instantiated. ID: {i}");
             i++;
         }
     }
@@ -377,11 +413,11 @@ public class Main : MonoBehaviour
         int i = 0;
         foreach (judgeLine l in json.judgeLineList)
         {
-            GameObject t = Instantiate(Line);
+            GameObject t = Instantiate(Line, instantiateTransform);
             t.GetComponent<JudgeLineMovement>().id = i;
             t.GetComponent<JudgeLineMovement>().line = l;
             //InternalEditorUtility.AddTag($"Note_Line{i - 1}");
-            Debug.Log($"Line instatiated. ID: {i}");
+            Debug.Log($"Line instantiated. ID: {i}");
             i++;
         }
     }
@@ -435,13 +471,18 @@ public class Main : MonoBehaviour
                 int lineId = int.Parse(GlobalSetting.lineImage.GetDataByRowAndCol(i + 1, 1));
                 float t1, t2;
                 t1 = float.Parse(GlobalSetting.lineImage.GetDataByRowAndCol(i + 1, 3));
-                t2 = t1 / float.Parse(GlobalSetting.lineImage.GetDataByRowAndCol(i + 1, 4));
                 WWW a = new WWW("file://" + Path.Combine(PlayerPrefs.GetString("chartFolderPath", ""),
                     GlobalSetting.lineImage.GetDataByRowAndCol(i + 1, 2)));
                 while (!a.isDone) { };
-                Sprite sprite = Sprite.Create(a.texture, new Rect(0, 0, a.texture.width, a.texture.height), new Vector2(0.5f, 0.5f));
+                if (t1 > 0)
+                    t1 = t1;
+                else
+                    t1 = Mathf.Abs(t1);
+                t1 = (200 * t1 * Camera.main.orthographicSize / a.texture.height);
+                t2 = t1 / float.Parse(GlobalSetting.lineImage.GetDataByRowAndCol(i + 1, 4));
+                Sprite sprite = Sprite.Create(a.texture, new Rect(0, 0, a.texture.width, a.texture.height), Vector2.one / 2f);
                 GlobalSetting.lines[lineId].GetComponent<SpriteRenderer>().sprite = sprite;
-                GlobalSetting.lines[lineId].targetScale = new Vector3(t1 / 2f, t2 / 2f, 1);
+                GlobalSetting.lines[lineId].targetScale = new Vector3(t1, t2, 1);
                 GlobalSetting.lines[lineId].isImage = true;
             }
             catch
